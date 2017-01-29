@@ -1,0 +1,88 @@
+---
+title: "Machine Learning Project Assignement"
+author: "SolGarlic"
+date: "29 de Janeiro de 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R 
+teste
+
+```{r, eval=FALSE, include=FALSE}
+download.file(url="https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv",destfile="pml-training.csv")
+download.file(url="https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv",destfile="pml-testing.csv", method="auto")
+
+trainingTOTAL <- read.csv("pml-training.csv")
+testing  <- read.csv("pml-testing.csv")
+
+#fix NAs: there are 67 variables with almost all NAs. We will exclude these columns
+sum(apply(trainingTOTAL,2,function(x) sum(is.na(x)))>19000)
+# and the remaining (93) columns have zero NAs: we will only keep these
+columns <- apply(trainingTOTAL,2,function(x) sum(is.na(x)))==0
+sum(columns)
+trainingTOTAL <- trainingTOTAL[,columns]
+testing <- testing[,columns]
+#fix DIV/0: there are 33 columns that contain some DIV/0 and are >95% empty. We will also exclude these columns
+# perhaps removing near zero covars might do the same (nearZeroVar(trainingTOTAL))
+columns2 <- which(apply(trainingTOTAL,2,function(x) sum(x=="#DIV/0!"))>0)
+sum(apply(trainingTOTAL,2,function(x) sum(x=="#DIV/0!"))>0)
+trainingTOTAL <- trainingTOTAL[,-columns2]
+testing <- testing[,-columns2]
+
+#try to use some covar analysis to reduce more variables=
+#is there a time series in the data? (check trainingTOTAL)
+#trainingTOTAL$timestamp <- with(trainingTOTAL,
+#                                raw_timestamp_part_1+raw_timestamp_part_2/1e6)
+#class(trainingTOTAL$timestamp) = c('POSIXt','POSIXct')
+
+library(caret)
+
+# Classification TREE deve ser bom para isto, tendo em conta que o "testing" só tem uma linha por observação (e o timestamp não serve para nada)
+
+set.seed(3433)
+inValidation = createDataPartition(trainingTOTAL$classe, p = 4/5)[[1]]
+training = trainingTOTAL[inValidation, ]
+validation = trainingTOTAL[-inValidation, ]
+
+# modfit <- train(classe ~ .,data=training, method="rf") 
+# out of memory?? "cannot allocate vector of size 119.8 Mb"
+# same with gbm and glm. We have to reduce the data set much more.
+mod1 <- train(classe ~ roll_belt:magnet_forearm_z,data=training, method="rf") 
+      # 0.3267907
+
+mod2 <- train(training[,8:59],training$classe,method="rpart")
+# accuracy 0.4805
+p2 <- predict(mod2, validation)
+
+
+mod3 <- svm(training[,8:59],training$classe)# accuracy 0.9442
+p3 <- predict(mod3, validation[,8:59])
+
+ptest <- predict(mod3, testing[,8:59])
+
+
+predDF <- data.frame(p2,p3,classe=validation$classe)
+combModFit <- svm(classe ~ ., data=predDF)
+pcomb=predict(combModFit,predDF)
+
+sum(p2==validation$classe)/length(p)
+sum(p3==validation$classe)/length(p)
+sum(pcomb==validation$classe)/length(p)
+
+
+
+
+p <- predict(modfit, validation)
+sum(p==validation$classe)/length(p)
+summary(training)
+
+p <- predict(modfit, validation[,8:59])
+sum(p==validation$classe)/length(p)
+summary(training)
+table(p==validation$classe,validation$classe)
+```
+
