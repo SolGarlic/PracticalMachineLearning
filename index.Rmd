@@ -7,64 +7,104 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+
+library(caret)
+library(e1071)
+
 ```
 
-## R 
-teste
+# Weight Lifting Exercise - predict "how they do it"
 
-```{r, eval=FALSE, include=FALSE}
+## Executive Summary
+In this project we will analyze a large number of observations taken by measuring acceleration and position of several sensors used by a test subject while weight lifting.
+We will demonstrate that it is accurately possible to predict HOW the subjects are performing the exercise.
+
+## Loading and exploring data
+
+We will first download the data:
+```{r download, eval=FALSE, cache=TRUE}
 download.file(url="https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv",destfile="pml-training.csv")
 download.file(url="https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv",destfile="pml-testing.csv", method="auto")
+```
 
+And load the data:
+```{r load, cache=TRUE}
 trainingTOTAL <- read.csv("pml-training.csv")
 testing  <- read.csv("pml-testing.csv")
+```
 
-#fix NAs: there are 67 variables with almost all NAs. We will exclude these columns
-sum(apply(trainingTOTAL,2,function(x) sum(is.na(x)))>19000)
-# and the remaining (93) columns have zero NAs: we will only keep these
+By taking a look at the data, we can see that of the 160 variables, 67 of them are 95% NA, and surely are not relevant to the analysis.
+Also there are 33 columns that contain some "DIV/0" and are >95% empty, also not adding nothing to our analysis.
+We will exclude these 100 variables, remaining with 60 on both the testing and training sets:
+
+```{r clean, cache=TRUE}
+#fix NAs: there are 67 variables with almost all NAs, and the remaining (93) columns have zero NAs: we will only keep these:
 columns <- apply(trainingTOTAL,2,function(x) sum(is.na(x)))==0
-sum(columns)
 trainingTOTAL <- trainingTOTAL[,columns]
 testing <- testing[,columns]
 #fix DIV/0: there are 33 columns that contain some DIV/0 and are >95% empty. We will also exclude these columns
-# perhaps removing near zero covars might do the same (nearZeroVar(trainingTOTAL))
 columns2 <- which(apply(trainingTOTAL,2,function(x) sum(x=="#DIV/0!"))>0)
-sum(apply(trainingTOTAL,2,function(x) sum(x=="#DIV/0!"))>0)
 trainingTOTAL <- trainingTOTAL[,-columns2]
 testing <- testing[,-columns2]
+```
 
-#try to use some covar analysis to reduce more variables=
-#is there a time series in the data? (check trainingTOTAL)
-#trainingTOTAL$timestamp <- with(trainingTOTAL,
-#                                raw_timestamp_part_1+raw_timestamp_part_2/1e6)
-#class(trainingTOTAL$timestamp) = c('POSIXt','POSIXct')
+Now, from the remaining 60 variables, the first 7 are:
+1- sequential index.  
+2- user name, that we will not use because the prediction should be independent of who was performing the exercises.  
+3- timestamp (3 variables in total), which will also not be needed because the test set only has isolated observations and not time series of the exercises.  
+4- two variables regarding the "window", which will not be needed.  
 
-library(caret)
+And the last variable (column 60) is the "classe" that we want to predict.
 
-# Classification TREE deve ser bom para isto, tendo em conta que o "testing" só tem uma linha por observação (e o timestamp não serve para nada)
+Columns 8 to 59 are our predictors: acceleration, and position of the sensors that the subjects were using. We will be using these [,8:59] several times below. 
 
+## Cross validation strategy
+
+As we have a huge amount of observations, in order to validate our models we will create a "Validation" set from the original trainingTOTAL set:
+
+```{r partition, cache=TRUE}
 set.seed(3433)
 inValidation = createDataPartition(trainingTOTAL$classe, p = 4/5)[[1]]
-training = trainingTOTAL[inValidation, ]
+training   = trainingTOTAL[ inValidation, ]
 validation = trainingTOTAL[-inValidation, ]
+```
 
-# modfit <- train(classe ~ .,data=training, method="rf") 
-# out of memory?? "cannot allocate vector of size 119.8 Mb"
-# same with gbm and glm. We have to reduce the data set much more.
-mod1 <- train(classe ~ roll_belt:magnet_forearm_z,data=training, method="rf") 
-      # 0.3267907
 
+## Model validation and testing
+
+It doesn't seem that the sensors data need any preprocessing, so we can now try a few models to see how they fare.
+
+First with random forest:
+```{r random forest, cache=TRUE, eval=FALSE}
+mod1 <- train(training[,8:59],training$classe, method="rf") 
+p1 <- predict(mod1, validation)
+accuracy1 <- sum(p1==validation$classe)/length(p1)
+print(accuracy1)
+```
+So, after several minutes of hard computation, we only have 0.327 accuracy
+
+We will now try a classification tree:
+```{r classification tree, cache=TRUE, eval=FALSE} 
 mod2 <- train(training[,8:59],training$classe,method="rpart")
-# accuracy 0.4805
 p2 <- predict(mod2, validation)
+accuracy2 <- sum(p2==validation$classe)/length(p2)
+print(accuracy2)
+```
+This was a bit faster, and with an accuracy improvement to 0.4805, but we need more.
 
-
+Now we will try the Support Vector Machines from the packate e1017:
+```{r SVM, cache=TRUE} 
 mod3 <- svm(training[,8:59],training$classe)# accuracy 0.9442
 p3 <- predict(mod3, validation[,8:59])
+accuracy3 <- sum(p3==validation$classe)/length(p3)
+print(accuracy3)
+```
+This was even faster, and with an accuracy `r I(accuracy3)`!!
 
-ptest <- predict(mod3, testing[,8:59])
+## Testing of model combination
 
-
+We could try combining models to see if it improves, but it doesn't
+```{r combination, eval=FALSE}
 predDF <- data.frame(p2,p3,classe=validation$classe)
 combModFit <- svm(classe ~ ., data=predDF)
 pcomb=predict(combModFit,predDF)
@@ -72,17 +112,11 @@ pcomb=predict(combModFit,predDF)
 sum(p2==validation$classe)/length(p)
 sum(p3==validation$classe)/length(p)
 sum(pcomb==validation$classe)/length(p)
+````
 
-
-
-
-p <- predict(modfit, validation)
-sum(p==validation$classe)/length(p)
-summary(training)
-
-p <- predict(modfit, validation[,8:59])
-sum(p==validation$classe)/length(p)
-summary(training)
-table(p==validation$classe,validation$classe)
+## Conclusion
+So the best model was SVM, with an accuracy on our validation set of 94%, and (almost) all of the predictions on the test set should be correct:
+```{r conclusion and results, cache=TRUE} 
+ptest <- predict(mod3, testing[,8:59])
+print(ptest)
 ```
-

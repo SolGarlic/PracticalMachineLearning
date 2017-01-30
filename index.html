@@ -123,9 +123,87 @@ $(document).ready(function () {
 </div>
 
 
-<div id="r" class="section level2">
-<h2>R</h2>
-<p>teste</p>
+<div id="weight-lifting-exercise---predict-how-they-do-it" class="section level1">
+<h1>Weight Lifting Exercise - predict “how they do it”</h1>
+<div id="executive-summary" class="section level2">
+<h2>Executive Summary</h2>
+<p>In this project we will analyze a large number of observations taken by measuring acceleration and position of several sensors used by a test subject while weight lifting. We will demonstrate that it is accurately possible to predict HOW the subjects are performing the exercise.</p>
+</div>
+<div id="loading-and-exploring-data" class="section level2">
+<h2>Loading and exploring data</h2>
+<p>We will first download the data:</p>
+<pre class="r"><code>download.file(url=&quot;https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv&quot;,destfile=&quot;pml-training.csv&quot;)
+download.file(url=&quot;https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv&quot;,destfile=&quot;pml-testing.csv&quot;, method=&quot;auto&quot;)</code></pre>
+<p>And load the data:</p>
+<pre class="r"><code>trainingTOTAL &lt;- read.csv(&quot;pml-training.csv&quot;)
+testing  &lt;- read.csv(&quot;pml-testing.csv&quot;)</code></pre>
+<p>By taking a look at the data, we can see that of the 160 variables, 67 of them are 95% NA, and surely are not relevant to the analysis. Also there are 33 columns that contain some “DIV/0” and are &gt;95% empty, also not adding nothing to our analysis. We will exclude these 100 variables, remaining with 60 on both the testing and training sets:</p>
+<pre class="r"><code>#fix NAs: there are 67 variables with almost all NAs, and the remaining (93) columns have zero NAs: we will only keep these:
+columns &lt;- apply(trainingTOTAL,2,function(x) sum(is.na(x)))==0
+trainingTOTAL &lt;- trainingTOTAL[,columns]
+testing &lt;- testing[,columns]
+#fix DIV/0: there are 33 columns that contain some DIV/0 and are &gt;95% empty. We will also exclude these columns
+columns2 &lt;- which(apply(trainingTOTAL,2,function(x) sum(x==&quot;#DIV/0!&quot;))&gt;0)
+trainingTOTAL &lt;- trainingTOTAL[,-columns2]
+testing &lt;- testing[,-columns2]</code></pre>
+<p>Now, from the remaining 60 variables, the first 7 are: 1- sequential index.<br />
+2- user name, that we will not use because the prediction should be independent of who was performing the exercises.<br />
+3- timestamp (3 variables in total), which will also not be needed because the test set only has isolated observations and not time series of the exercises.<br />
+4- two variables regarding the “window”, which will not be needed.</p>
+<p>And the last variable (column 60) is the “classe” that we want to predict.</p>
+<p>Columns 8 to 59 are our predictors: acceleration, and position of the sensors that the subjects were using. We will be using these [,8:59] several times below.</p>
+</div>
+<div id="cross-validation-strategy" class="section level2">
+<h2>Cross validation strategy</h2>
+<p>As we have a huge amount of observations, in order to validate our models we will create a “Validation” set from the original trainingTOTAL set:</p>
+<pre class="r"><code>set.seed(3433)
+inValidation = createDataPartition(trainingTOTAL$classe, p = 4/5)[[1]]
+training   = trainingTOTAL[ inValidation, ]
+validation = trainingTOTAL[-inValidation, ]</code></pre>
+</div>
+<div id="model-validation-and-testing" class="section level2">
+<h2>Model validation and testing</h2>
+<p>It doesn’t seem that the sensors data need any preprocessing, so we can now try a few models to see how they fare.</p>
+<p>First with random forest:</p>
+<pre class="r"><code>mod1 &lt;- train(training[,8:59],training$classe, method=&quot;rf&quot;) 
+p1 &lt;- predict(mod1, validation)
+accuracy1 &lt;- sum(p1==validation$classe)/length(p1)
+print(accuracy1)</code></pre>
+<p>So, after several minutes of hard computation, we only have 0.327 accuracy</p>
+<p>We will now try a classification tree:</p>
+<pre class="r"><code>mod2 &lt;- train(training[,8:59],training$classe,method=&quot;rpart&quot;)
+p2 &lt;- predict(mod2, validation)
+accuracy2 &lt;- sum(p2==validation$classe)/length(p2)
+print(accuracy2)</code></pre>
+<p>This was a bit faster, and with an accuracy improvement to 0.4805, but we need more.</p>
+<p>Now we will try the Support Vector Machines from the packate e1017:</p>
+<pre class="r"><code>mod3 &lt;- svm(training[,8:59],training$classe)# accuracy 0.9442
+p3 &lt;- predict(mod3, validation[,8:59])
+accuracy3 &lt;- sum(p3==validation$classe)/length(p3)
+print(accuracy3)</code></pre>
+<pre><code>## [1] 0.9441754</code></pre>
+<p>This was even faster, and with an accuracy 0.9441754!!</p>
+</div>
+<div id="testing-of-model-combination" class="section level2">
+<h2>Testing of model combination</h2>
+<p>We could try combining models to see if it improves, but it doesn’t</p>
+<pre class="r"><code>predDF &lt;- data.frame(p2,p3,classe=validation$classe)
+combModFit &lt;- svm(classe ~ ., data=predDF)
+pcomb=predict(combModFit,predDF)
+
+sum(p2==validation$classe)/length(p)
+sum(p3==validation$classe)/length(p)
+sum(pcomb==validation$classe)/length(p)</code></pre>
+</div>
+<div id="conclusion" class="section level2">
+<h2>Conclusion</h2>
+<p>So the best model was SVM, with an accuracy on our validation set of 94%, and (almost) all of the predictions on the test set should be correct:</p>
+<pre class="r"><code>ptest &lt;- predict(mod3, testing[,8:59])
+print(ptest)</code></pre>
+<pre><code>##  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 
+##  B  A  B  A  A  E  D  B  A  A  B  C  B  A  E  E  A  B  B  B 
+## Levels: A B C D E</code></pre>
+</div>
 </div>
 
 
